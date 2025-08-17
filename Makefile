@@ -3,9 +3,9 @@ DESTDIR ?=
 NAME = anise-repo-devkit
 GOLANG_VERSION=$(shell go env GOVERSION)
 
-override LDFLAGS += -X "github.com/geaaru/luet/pkg/config.BuildTime=$(shell date -u '+%Y-%m-%d %I:%M:%S %Z')"
-override LDFLAGS += -X "github.com/geaaru/luet/pkg/config.BuildCommit=$(shell git rev-parse HEAD)"
-override LDFLAGS += -X "github.com/geaaru/luet/pkg/config.BuildGoVersion=$(GOLANG_VERSION)"
+override LDFLAGS += -X "github.com/macaroni-os/anise-repo-devkit/pkg/devkit.BuildTime=$(shell date -u '+%Y-%m-%d %I:%M:%S %Z')"
+override LDFLAGS += -X "github.com/macaroni-os/anise-repo-devkit/pkg/devkit.BuildCommit=$(shell git rev-parse HEAD)"
+override LDFLAGS += -X "github.com/macaroni-os/anise-repo-devkit/pkg/devkit.BuildGoVersion=$(GOLANG_VERSION)"
 
 all: build install
 

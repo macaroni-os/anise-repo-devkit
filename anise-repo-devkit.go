@@ -13,7 +13,7 @@ import (
 	devkitcmd "github.com/macaroni-os/anise-repo-devkit/pkg/cmd"
 	"github.com/macaroni-os/anise-repo-devkit/pkg/devkit"
 
-	. "github.com/geaaru/luet/pkg/config"
+	anise_cfg "github.com/geaaru/luet/pkg/config"
 	. "github.com/geaaru/luet/pkg/logger"
 	"github.com/spf13/cobra"
 )
@@ -25,15 +25,15 @@ Anise Repository Devkit`
 )
 
 func initConfig() error {
-	LuetCfg.Viper.SetEnvPrefix("LUET")
-	LuetCfg.Viper.AutomaticEnv() // read in environment variables that match
+	anise_cfg.LuetCfg.Viper.SetEnvPrefix("LUET")
+	anise_cfg.LuetCfg.Viper.AutomaticEnv() // read in environment variables that match
 
 	// Create EnvKey Replacer for handle complex structure
 	replacer := strings.NewReplacer(".", "__")
-	LuetCfg.Viper.SetEnvKeyReplacer(replacer)
-	LuetCfg.Viper.SetTypeByDefaultValue(true)
+	anise_cfg.LuetCfg.Viper.SetEnvKeyReplacer(replacer)
+	anise_cfg.LuetCfg.Viper.SetTypeByDefaultValue(true)
 
-	err := LuetCfg.Viper.Unmarshal(&LuetCfg)
+	err := anise_cfg.LuetCfg.Viper.Unmarshal(&anise_cfg.LuetCfg)
 	if err != nil {
 		return err
 	}
@@ -49,7 +49,8 @@ func Execute() {
 		Use:   "anise-repo-devkit --",
 		Short: cliName,
 		Version: fmt.Sprintf("%s-g%s %s - %s",
-			devkit.Version, BuildCommit, BuildTime, BuildGoVersion,
+			devkit.Version, devkit.BuildCommit,
+			devkit.BuildTime, devkit.BuildGoVersion,
 		),
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			err := initConfig()
@@ -60,7 +61,7 @@ func Execute() {
 
 			debug, _ := cmd.Flags().GetBool("debug")
 			if debug {
-				LuetCfg.GetGeneral().Debug = true
+				anise_cfg.LuetCfg.GetGeneral().Debug = true
 			}
 
 		},

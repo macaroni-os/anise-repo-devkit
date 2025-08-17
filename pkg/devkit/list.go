@@ -10,7 +10,7 @@ import (
 
 	specs "github.com/macaroni-os/anise-repo-devkit/pkg/specs"
 
-	. "github.com/geaaru/luet/pkg/config"
+	anise_cfg "github.com/geaaru/luet/pkg/config"
 	. "github.com/geaaru/luet/pkg/logger"
 	anise_pkg "github.com/geaaru/luet/pkg/package"
 	anise_tree "github.com/geaaru/luet/pkg/tree"
@@ -149,7 +149,7 @@ func (c *RepoList) ListPkgsMissingByDeps(treePaths []string, withResolve bool) (
 		}
 	}
 
-	if LuetCfg.GetGeneral().Debug {
+	if anise_cfg.LuetCfg.GetGeneral().Debug {
 		pc.Stage4LevelsDumpWrapper(worker.Levels, "")
 	}
 

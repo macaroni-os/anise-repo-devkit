@@ -7,3 +7,9 @@ package devkit
 const (
 	Version = "0.1.0"
 )
+
+var (
+	BuildTime      string
+	BuildCommit    string
+	BuildGoVersion string
+)

@@ -17,9 +17,9 @@ builds:
     ldflags:
       - >-
         -s -w
-      - -X 'github.com/geaaru/luet/pkg/config.BuildTime={{ time "2006-01-02 15:04:05 MST" }}'
-      - -X 'github.com/geaaru/luet/pkg/config.BuildCommit={{ .FullCommit }}'
-      - -X 'github.com/geaaru/luet/pkg/config.BuildGoVersion={{ .Env.GOVERSION }}'
+      - -X 'github.com/macaroni-os/anise-repo-devkit/pkg/devkit.BuildTime={{ time "2006-01-02 15:04:05 MST" }}'
+      - -X 'github.com/macaroni-os/anise-repo-devkit/pkg/devkit.BuildCommit={{ .FullCommit }}'
+      - -X 'github.com/macaroni-os/anise-repo-devkit/pkg/devkit.BuildGoVersion={{ .Env.GOVERSION }}'
 
 archives:
   - format: binary
