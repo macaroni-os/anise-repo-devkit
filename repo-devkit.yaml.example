@@ -1,0 +1,16 @@
+
+# On cleaner section it's possible define the list of files
+# to ignore from removing.
+# cleaner:
+
+  # Define regex string to use for matching of the filename to ignore
+  #
+  # excludes:
+  #  - ^myfile
+
+# It's possible to define a list of packages to ignore from compilation
+# list:
+#  exclude_pkgs:
+#    - name: "foo"
+#      category: "app"
+#      version: ">=0"
