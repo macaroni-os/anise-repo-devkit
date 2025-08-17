@@ -19,6 +19,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Get Golang Version
+        id: goversion
+        run: |
+          echo "GOVERSION=$(go env GOVERSION)" >> $GITHUB_ENV
+
       #- name: Install deps
       #  run: |
       #      sudo -E env "PATH=$PATH" make deps
@@ -26,6 +31,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v4
         with:
           install-only: true
+
       - name: Build snapshot
         run: sudo -E env "PATH=$PATH" make goreleaser-snapshot
 
