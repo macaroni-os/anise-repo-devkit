@@ -159,7 +159,7 @@ func NewCleanCommand() *cobra.Command {
 		"Set minio Access Key to use or set env MINIO_ID.")
 	flags.String("minio-secret", "",
 		"Set minio Access Key to use or set env MINIO_SECRET.")
-	flags.String("minio-region", "", "Optinally define the minio region.")
+	flags.String("minio-region", "", "Optionally define the minio region.")
 
 	return cmd
 }
