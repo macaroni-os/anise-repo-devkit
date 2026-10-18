@@ -124,7 +124,7 @@ func (c *RepoKnife) Analyze() error {
 	}
 
 	extrametadataRegex := []string{
-		".*extra-metadata.json.zstd",
+		".*extra-metadata.json.zstd$|.*extra-metadata.json.zst$",
 	}
 
 	for _, f := range files {
@@ -159,7 +159,7 @@ func (c *RepoKnife) Analyze() error {
 		} else if tmtools.RegexEntry(f, pkgFilesRegex) {
 
 			replaceRegex := regexp.MustCompile(
-				`.package.tar$|.package.tar.gz$|.package.tar.zst$`,
+				`.package.tar$|.package.tar.gz$|.package.tar.zst$|.package.tar.zstd$`,
 			)
 
 			metaFile := replaceRegex.ReplaceAllString(f, ".metadata.yaml")
