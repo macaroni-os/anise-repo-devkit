@@ -14,6 +14,7 @@ import (
 	devkit "github.com/macaroni-os/anise-repo-devkit/pkg/devkit"
 	specs "github.com/macaroni-os/anise-repo-devkit/pkg/specs"
 
+	anise_cfg "github.com/macaroni-os/anise/pkg/config"
 	anise_pkg "github.com/macaroni-os/anise/pkg/package"
 	anise_spectooling "github.com/macaroni-os/anise/pkg/spectooling"
 	cobra "github.com/spf13/cobra"
@@ -69,6 +70,10 @@ func NewPkgsCommand() *cobra.Command {
 
 			jsonOutput, _ := cmd.Flags().GetBool("json")
 			limit, _ := cmd.Flags().GetInt32("limit")
+
+			if jsonOutput {
+				anise_cfg.AniseCfg.GetLogging().SetLogLevel("error")
+			}
 
 			if specsFile == "" {
 				s = specs.NewAniseRDConfig()
