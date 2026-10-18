@@ -73,7 +73,7 @@ func (c *RepoList) ListPkgsMissing() ([]*anise_pkg.DefaultPackage, error) {
 		for pkg, versions := range tree.Map {
 
 			for idx := range versions {
-				p := fmt.Sprintf("%s-%s", pkg, versions[idx])
+				p := fmt.Sprintf("%s-%s", pkg, versions[idx].Version)
 				DebugC(fmt.Sprintf("Checking %s...", p))
 
 				if _, ok := mPkgs[p]; !ok {
