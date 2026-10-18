@@ -42,10 +42,11 @@ func NewRepoKnife(s *specs.AniseRDConfig,
 	var handler specs.RepoBackendHandler
 
 	ans := &RepoKnife{
-		Specs:       s,
-		ForestGuard: anise_tree.NewForestGuard(anise_config.AniseCfg),
-		PkgsMap:     make(map[string]string, 0),
-		MetaMap:     make(map[string]*artifact.PackageArtifact, 0),
+		Specs:        s,
+		ForestGuard:  anise_tree.NewForestGuard(anise_config.AniseCfg),
+		PkgsMap:      make(map[string]string, 0),
+		MetaMap:      make(map[string]*artifact.PackageArtifact, 0),
+		ExtraMetaMap: make(map[string]*artifact.ExtraMetadata, 0),
 	}
 
 	switch backend {
