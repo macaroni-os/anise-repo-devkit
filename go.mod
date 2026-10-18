@@ -8,7 +8,7 @@ require (
 	github.com/geaaru/time-master v0.5.0
 	github.com/hashicorp/go-version v1.7.0
 	github.com/klauspost/compress v1.20.3
-	github.com/macaroni-os/anise v0.44.1-0.20261017204518-4f1c9d5176b4
+	github.com/macaroni-os/anise v0.45.0
 	github.com/minio/minio-go/v7 v7.0.98
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -37,6 +37,7 @@ require (
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/briandowns/spinner v1.12.1-0.20201220203425-e201aaea0a31 // indirect
 	github.com/canonical/lxd v0.0.0-20260226085519-736f34afb267 // indirect
+	github.com/cavaliercoder/grab v1.0.1-0.20201108051000-98a5bfe305ec // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/chuckpreslar/emission v0.0.0-20170206194824-a7ddd980baf9 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
@@ -103,6 +104,7 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
+	github.com/gofrs/flock v0.13.0 // indirect
 	github.com/gofrs/uuid v4.0.0+incompatible // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
@@ -140,6 +142,7 @@ require (
 	github.com/microcosm-cc/bluemonday v1.0.26 // indirect
 	github.com/minio/crc64nvme v1.1.1 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
+	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
@@ -173,6 +176,7 @@ require (
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/sagikazarmark/locafero v0.12.0 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
+	github.com/schollz/progressbar/v3 v3.13.0 // indirect
 	github.com/sergi/go-diff v1.2.0 // indirect
 	github.com/sethvargo/go-password v0.1.2 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect

@@ -145,9 +145,26 @@ func (s *RuntimeSolver) resolvePackage(ptask *PackageTask, stack []string) (*art
 	defFile := filepath.Join(ptask.Tree.TreePath, ptask.Tree.BaseDir, ptask.Version.Path)
 	pkgPath := filepath.Dir(defFile)
 
-	runtimePackage, err := tree.ReadDefinitionFile(defFile)
-	if err != nil {
-		return nil, err
+	var runtimePackage *pkg.DefaultPackage
+	var err error
+
+	if filepath.Base(defFile) == "collection.yaml" {
+		atom := pkg.NewPackageWithCatThin(
+			ptask.PackageSelector.GetCategory(),
+			ptask.PackageSelector.GetName(),
+			ptask.Version.Version)
+
+		runtimePackage, err = tree.ReadDefinitionFromCollection(defFile, atom)
+		if err != nil {
+			return nil, err
+		}
+
+	} else {
+
+		runtimePackage, err = tree.ReadDefinitionFile(defFile)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Check if the package has conflicts
@@ -158,7 +175,7 @@ func (s *RuntimeSolver) resolvePackage(ptask *PackageTask, stack []string) (*art
 	}
 
 	// Check if the package has dependencies to recursively resolve
-	if len(runtimePackage.GetRequires()) > 0 {
+	if len(runtimePackage.GetRequires()) > 0 && !s.Opts.NoDeps {
 
 		for _, dep := range runtimePackage.GetRequires() {
 
