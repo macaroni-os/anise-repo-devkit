@@ -25,7 +25,7 @@ Anise Repository Devkit`
 )
 
 func initConfig() error {
-	anise_cfg.AniseCfg.Viper.SetEnvPrefix("LUET")
+	anise_cfg.AniseCfg.Viper.SetEnvPrefix("ANISE")
 	anise_cfg.AniseCfg.Viper.AutomaticEnv() // read in environment variables that match
 
 	// Create EnvKey Replacer for handle complex structure
