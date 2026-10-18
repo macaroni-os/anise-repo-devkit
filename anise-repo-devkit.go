@@ -13,27 +13,27 @@ import (
 	devkitcmd "github.com/macaroni-os/anise-repo-devkit/pkg/cmd"
 	"github.com/macaroni-os/anise-repo-devkit/pkg/devkit"
 
-	anise_cfg "github.com/geaaru/luet/pkg/config"
-	. "github.com/geaaru/luet/pkg/logger"
+	anise_cfg "github.com/macaroni-os/anise/pkg/config"
+	. "github.com/macaroni-os/anise/pkg/logger"
 	"github.com/spf13/cobra"
 )
 
 const (
-	cliName = `Copyright (c) 2020-2025 - Daniele Rondina
+	cliName = `Copyright (c) 2020-2026 - Daniele Rondina
 
 Anise Repository Devkit`
 )
 
 func initConfig() error {
-	anise_cfg.LuetCfg.Viper.SetEnvPrefix("LUET")
-	anise_cfg.LuetCfg.Viper.AutomaticEnv() // read in environment variables that match
+	anise_cfg.AniseCfg.Viper.SetEnvPrefix("LUET")
+	anise_cfg.AniseCfg.Viper.AutomaticEnv() // read in environment variables that match
 
 	// Create EnvKey Replacer for handle complex structure
 	replacer := strings.NewReplacer(".", "__")
-	anise_cfg.LuetCfg.Viper.SetEnvKeyReplacer(replacer)
-	anise_cfg.LuetCfg.Viper.SetTypeByDefaultValue(true)
+	anise_cfg.AniseCfg.Viper.SetEnvKeyReplacer(replacer)
+	anise_cfg.AniseCfg.Viper.SetTypeByDefaultValue(true)
 
-	err := anise_cfg.LuetCfg.Viper.Unmarshal(&anise_cfg.LuetCfg)
+	err := anise_cfg.AniseCfg.Viper.Unmarshal(&anise_cfg.AniseCfg)
 	if err != nil {
 		return err
 	}
@@ -61,7 +61,7 @@ func Execute() {
 
 			debug, _ := cmd.Flags().GetBool("debug")
 			if debug {
-				anise_cfg.LuetCfg.GetGeneral().Debug = true
+				anise_cfg.AniseCfg.GetGeneral().Debug = true
 			}
 
 		},

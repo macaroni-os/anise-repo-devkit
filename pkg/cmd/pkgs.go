@@ -14,8 +14,8 @@ import (
 	devkit "github.com/macaroni-os/anise-repo-devkit/pkg/devkit"
 	specs "github.com/macaroni-os/anise-repo-devkit/pkg/specs"
 
-	anise_pkg "github.com/geaaru/luet/pkg/package"
-	anise_spectooling "github.com/geaaru/luet/pkg/spectooling"
+	anise_pkg "github.com/macaroni-os/anise/pkg/package"
+	anise_spectooling "github.com/macaroni-os/anise/pkg/spectooling"
 	cobra "github.com/spf13/cobra"
 )
 

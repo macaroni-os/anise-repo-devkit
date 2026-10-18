@@ -5,7 +5,9 @@ See AUTHORS and LICENSE for the license details and contributors.
 package backends
 
 import (
+	"bufio"
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -20,8 +22,9 @@ import (
 	utils "github.com/MottainaiCI/mottainai-server/pkg/utils"
 	schema "github.com/MottainaiCI/mottainai-server/routes/schema"
 	v1 "github.com/MottainaiCI/mottainai-server/routes/schema/v1"
-	. "github.com/geaaru/luet/pkg/logger"
-	artifact "github.com/geaaru/luet/pkg/v2/compiler/types/artifact"
+	"github.com/klauspost/compress/zstd"
+	. "github.com/macaroni-os/anise/pkg/logger"
+	artifact "github.com/macaroni-os/anise/pkg/v2/compiler/types/artifact"
 )
 
 type BackendMottainai struct {
@@ -191,6 +194,33 @@ func (b *BackendMottainai) GetMetadata(file string) (*artifact.PackageArtifact, 
 	fileContent := outBuffer.String()
 
 	return artifact.NewPackageArtifactFromYaml([]byte(fileContent))
+}
+
+func (b *BackendMottainai) GetExtraMetadata(file string) (*artifact.ExtraMetadata, error) {
+	var outBuffer bytes.Buffer
+
+	url := b.MottainaiClient.GetBaseURL() +
+		path.Join("/namespace/", b.Namespace, utils.PathEscape(file))
+
+	_, err := b.MottainaiClient.DownloadResource(url, &outBuffer,
+		b.Config.GetAgent().DownloadRateLimit)
+	if err != nil {
+		return nil, err
+	}
+
+	bufferedReader := bufio.NewReader(&outBuffer)
+	r, err := zstd.NewReader(bufferedReader)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+
+	var metadata artifact.ExtraMetadata
+	if err := json.NewDecoder(r).Decode(&metadata); err != nil {
+		return nil, fmt.Errorf("error on decode extra metadata from file %s", file)
+	}
+
+	return &metadata, nil
 }
 
 func (b *BackendMottainai) CleanFile(file string) error {

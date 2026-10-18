@@ -11,9 +11,9 @@ import (
 
 	"github.com/macaroni-os/anise-repo-devkit/pkg/version"
 
-	. "github.com/geaaru/luet/pkg/logger"
-	anise_pkg "github.com/geaaru/luet/pkg/package"
-	"gopkg.in/yaml.v2"
+	. "github.com/macaroni-os/anise/pkg/logger"
+	anise_pkg "github.com/macaroni-os/anise/pkg/package"
+	"gopkg.in/yaml.v3"
 )
 
 func NewAniseRDConfig() *AniseRDConfig {

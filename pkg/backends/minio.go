@@ -5,8 +5,10 @@ See AUTHORS and LICENSE for the license details and contributors.
 package backends
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,7 +16,8 @@ import (
 
 	"github.com/macaroni-os/anise-repo-devkit/pkg/specs"
 
-	artifact "github.com/geaaru/luet/pkg/v2/compiler/types/artifact"
+	"github.com/klauspost/compress/zstd"
+	artifact "github.com/macaroni-os/anise/pkg/v2/compiler/types/artifact"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
@@ -153,6 +156,29 @@ func (b *BackendMinio) GetMetadata(file string) (*artifact.PackageArtifact, erro
 	fileContent := outBuffer.String()
 
 	return artifact.NewPackageArtifactFromYaml([]byte(fileContent))
+}
+
+func (b *BackendMinio) GetExtraMetadata(file string) (*artifact.ExtraMetadata, error) {
+	object, err := b.MinioClient.GetObject(
+		context.Background(), b.Bucket, file, minio.GetObjectOptions{},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	bufferedReader := bufio.NewReader(object)
+	r, err := zstd.NewReader(bufferedReader)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+
+	var metadata artifact.ExtraMetadata
+	if err := json.NewDecoder(r).Decode(&metadata); err != nil {
+		return nil, fmt.Errorf("error on decode extra metadata from file %s", file)
+	}
+
+	return &metadata, nil
 }
 
 func (b *BackendMinio) CleanFile(file string) error {

@@ -5,15 +5,19 @@ See AUTHORS and LICENSE for the license details and contributors.
 package backends
 
 import (
+	"bufio"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 
-	. "github.com/geaaru/luet/pkg/logger"
-	artifact "github.com/geaaru/luet/pkg/v2/compiler/types/artifact"
 	"github.com/macaroni-os/anise-repo-devkit/pkg/specs"
+
+	"github.com/klauspost/compress/zstd"
+	. "github.com/macaroni-os/anise/pkg/logger"
+	artifact "github.com/macaroni-os/anise/pkg/v2/compiler/types/artifact"
 )
 
 type BackendLocal struct {
@@ -77,6 +81,29 @@ func (b *BackendLocal) GetMetadata(file string) (*artifact.PackageArtifact, erro
 	}
 
 	return artifact.NewPackageArtifactFromYaml(content)
+}
+
+func (b *BackendLocal) GetExtraMetadata(file string) (*artifact.ExtraMetadata, error) {
+	emetafile := filepath.Join(b.Path, file)
+	fd, err := os.Open(emetafile)
+	if err != nil {
+		return nil, fmt.Errorf("cannot open " + emetafile)
+	}
+	defer fd.Close()
+
+	bufferedReader := bufio.NewReader(fd)
+	r, err := zstd.NewReader(bufferedReader)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+
+	var metadata artifact.ExtraMetadata
+	if err := json.NewDecoder(r).Decode(&metadata); err != nil {
+		return nil, fmt.Errorf("error on decode extra metadata from file %s", file)
+	}
+
+	return &metadata, nil
 }
 
 func (b *BackendLocal) CleanFile(file string) error {

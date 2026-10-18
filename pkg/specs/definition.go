@@ -5,7 +5,7 @@ See AUTHORS and LICENSE for the license details and contributors.
 package specs
 
 import (
-	artifact "github.com/geaaru/luet/pkg/v2/compiler/types/artifact"
+	artifact "github.com/macaroni-os/anise/pkg/v2/compiler/types/artifact"
 )
 
 type AniseRDConfig struct {
@@ -30,5 +30,6 @@ type AnisePackage struct {
 type RepoBackendHandler interface {
 	GetFilesList() ([]string, error)
 	GetMetadata(string) (*artifact.PackageArtifact, error)
+	GetExtraMetadata(string) (*artifact.ExtraMetadata, error)
 	CleanFile(string) error
 }

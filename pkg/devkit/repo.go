@@ -14,20 +14,23 @@ import (
 	"github.com/macaroni-os/anise-repo-devkit/pkg/backends"
 	specs "github.com/macaroni-os/anise-repo-devkit/pkg/specs"
 
-	. "github.com/geaaru/luet/pkg/logger"
-	anise_pkg "github.com/geaaru/luet/pkg/package"
-	anise_tree "github.com/geaaru/luet/pkg/tree"
-	artifact "github.com/geaaru/luet/pkg/v2/compiler/types/artifact"
 	tmtools "github.com/geaaru/time-master/pkg/tools"
+	anise_config "github.com/macaroni-os/anise/pkg/config"
+	. "github.com/macaroni-os/anise/pkg/logger"
+	anise_pkg "github.com/macaroni-os/anise/pkg/package"
+	artifact "github.com/macaroni-os/anise/pkg/v2/compiler/types/artifact"
+	anise_tree "github.com/macaroni-os/anise/pkg/v2/tree"
 )
 
 type RepoKnife struct {
 	Specs          *specs.AniseRDConfig
 	BackendHandler specs.RepoBackendHandler
-	ReciperRuntime anise_tree.Builder
+
+	ForestGuard *anise_tree.ForestGuard
 
 	PkgsMap        map[string]string
 	MetaMap        map[string]*artifact.PackageArtifact
+	ExtraMetaMap   map[string]*artifact.ExtraMetadata
 	Files2Remove   []string
 	Verbose        bool
 	ProcessedFiles int
@@ -39,10 +42,10 @@ func NewRepoKnife(s *specs.AniseRDConfig,
 	var handler specs.RepoBackendHandler
 
 	ans := &RepoKnife{
-		Specs:          s,
-		ReciperRuntime: anise_tree.NewInstallerRecipe(anise_pkg.NewInMemoryDatabase(false)),
-		PkgsMap:        make(map[string]string, 0),
-		MetaMap:        make(map[string]*artifact.PackageArtifact, 0),
+		Specs:       s,
+		ForestGuard: anise_tree.NewForestGuard(anise_config.AniseCfg),
+		PkgsMap:     make(map[string]string, 0),
+		MetaMap:     make(map[string]*artifact.PackageArtifact, 0),
 	}
 
 	switch backend {
@@ -72,7 +75,8 @@ func (c *RepoKnife) LoadTrees(treePath []string) error {
 		} else {
 			DebugC(fmt.Sprintf(":evergreen_tree: Loading tree %s...", t))
 		}
-		err := c.ReciperRuntime.Load(t)
+		forceInMemoryGeneration := true
+		err := c.ForestGuard.LoadTrees([]string{t}, forceInMemoryGeneration)
 		if err != nil {
 			return errors.New("Error on load tree" + err.Error())
 		}
@@ -118,6 +122,10 @@ func (c *RepoKnife) Analyze() error {
 		".*package.tar|.*package.tar.*",
 	}
 
+	extrametadataRegex := []string{
+		".*extra-metadata.json.zstd",
+	}
+
 	for _, f := range files {
 		if tmtools.RegexEntry(f, repoRegex) {
 			DebugC(fmt.Sprintf("Ignoring repository file %s", f))
@@ -138,6 +146,15 @@ func (c *RepoKnife) Analyze() error {
 			}
 
 			c.MetaMap[f] = art
+		} else if tmtools.RegexEntry(f, extrametadataRegex) {
+
+			meta, err := c.BackendHandler.GetExtraMetadata(f)
+			if err != nil {
+				return err
+			}
+
+			c.ExtraMetaMap[f] = meta
+
 		} else if tmtools.RegexEntry(f, pkgFilesRegex) {
 
 			replaceRegex := regexp.MustCompile(
@@ -214,8 +231,8 @@ func (c *RepoKnife) CheckFilesWithTrees() error {
 		)
 		pkg.Category = art.CompileSpec.Package.Category
 
-		p, _ := c.ReciperRuntime.GetDatabase().FindPackage(pkg)
-		if p == nil {
+		p, _ := c.ForestGuard.SearchPackage(pkg)
+		if p == nil || len(p) == 0 {
 
 			pkgFile := filepath.Base(art.Path)
 

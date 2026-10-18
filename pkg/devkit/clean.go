@@ -9,7 +9,7 @@ import (
 
 	specs "github.com/macaroni-os/anise-repo-devkit/pkg/specs"
 
-	. "github.com/geaaru/luet/pkg/logger"
+	. "github.com/macaroni-os/anise/pkg/logger"
 )
 
 type RepoCleaner struct {
