@@ -1,0 +1,831 @@
+/*
+Copyright © 2019-2026 Macaroni OS Linux
+See AUTHORS and LICENSE for the license details and contributors.
+*/
+
+package artifact
+
+import (
+	"archive/tar"
+	"bufio"
+	"bytes"
+	"crypto/sha1"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"io"
+	"io/ioutil"
+	"os"
+	"path"
+	"path/filepath"
+	"strings"
+
+	. "github.com/macaroni-os/anise/pkg/config"
+	"github.com/macaroni-os/anise/pkg/helpers"
+	fileHelper "github.com/macaroni-os/anise/pkg/helpers/file"
+	. "github.com/macaroni-os/anise/pkg/logger"
+	pkg "github.com/macaroni-os/anise/pkg/package"
+	compilerspec "github.com/macaroni-os/anise/pkg/v2/compiler/types/specs"
+
+	tarf "github.com/geaaru/tar-formers/pkg/executor"
+	tarf_specs "github.com/geaaru/tar-formers/pkg/specs"
+	tarf_tools "github.com/geaaru/tar-formers/pkg/tools"
+	zstd "github.com/klauspost/compress/zstd"
+	gzip "github.com/klauspost/pgzip"
+	"github.com/pkg/errors"
+	yaml "gopkg.in/yaml.v3"
+)
+
+// When compiling, we write also a fingerprint.metadata.yaml file with PackageArtifact.
+// In this way we can have another command to create the repository
+// which will consist in just of an repository.yaml which is just the repository
+// structure with the list of package artifact.
+// In this way a generic client can fetch the packages and, after unpacking the tree,
+// performing queries to install packages.
+type PackageArtifact struct {
+	Path      string `json:"path" yaml:"path"`
+	CachePath string `json:"cache_path,omitempty" yaml:"cache_path,omitempty"`
+	TreePath  string `json:"tree_path,omitempty" yaml:"tree_path,omitempty"`
+
+	CompileSpec     *compilerspec.CompilationSpec `json:"compilespec,omitempty" yaml:"compilespec,omitempty"`
+	Checksums       Checksums                     `json:"checksums" yaml:"checksums"`
+	CompressionType tarf_tools.CompressionMode    `json:"compressiontype" yaml:"compressiontype"`
+	Files           []string                      `json:"files" yaml:"files"`
+
+	PackageCacheImage string              `json:"package_cacheimage,omitempty" yaml:"package_cacheimage,omitempty"`
+	Runtime           *pkg.DefaultPackage `json:"runtime,omitempty" yaml:"runtime,omitempty"`
+
+	BuildImageHash string `json:"hash_buildimage,omitempty" yaml:"hash_buildimage,omitempty"`
+	FinalImageHash string `json:"hash_finalimage,omitempty" yaml:"hash_finalimage,omitempty"`
+
+	ToGenerate bool           `json:"-" yaml:"-"`
+	Metadata   *ExtraMetadata `json:"-" yaml:"-"`
+}
+
+func (p *PackageArtifact) SetBuildImageHash(h string)       { p.BuildImageHash = h }
+func (p *PackageArtifact) GetBuildImageHash() string        { return p.BuildImageHash }
+func (p *PackageArtifact) SetFinalImageHash(h string)       { p.FinalImageHash = h }
+func (p *PackageArtifact) GetFinalImageHash() string        { return p.FinalImageHash }
+func (p *PackageArtifact) IsToGenerate() bool               { return p.ToGenerate }
+func (p *PackageArtifact) GetExtraMetadata() *ExtraMetadata { return p.Metadata }
+
+func (p *PackageArtifact) ShallowCopy() *PackageArtifact {
+	copy := *p
+	return &copy
+}
+
+func (p *PackageArtifact) ToPackageThin(withDeps bool,
+	solution *ArtifactsMap) (*pkg.PackageThin, error) {
+	// In order to calculate the sha256 used for the images
+	// I create a PackageThin based on type of the PackageArtifact
+
+	if p.CompileSpec != nil && p.CompileSpec.IsVirtual() {
+		return p.Runtime.ToPackageThin(), nil
+	}
+
+	pthin := pkg.NewPackageThin(
+		p.GetPackage().GetName(),
+		p.GetPackage().GetCategory(),
+		p.GetPackage().GetVersion(),
+		[]*pkg.PackageThin{}, []*pkg.PackageThin{},
+	)
+
+	pthin.UseFlags = p.GetPackage().GetUses()
+
+	buildPackage := p.CompileSpec.Package
+
+	if len(buildPackage.GetRequires()) > 0 && withDeps {
+
+		for _, dep := range buildPackage.GetRequires() {
+
+			depthin := pkg.NewPackageThin(
+				dep.GetName(),
+				dep.GetCategory(),
+				dep.GetVersion(),
+				[]*pkg.PackageThin{}, []*pkg.PackageThin{},
+			)
+
+			if solution != nil {
+				if solution.HasKey(dep.PackageName()) {
+					artefacts, _ := solution.GetArtifactsByKey(dep.PackageName())
+					depthin.Version = artefacts[0].GetVersion()
+
+				} else {
+					// Check if the package is provided
+					provides := solution.GetProvides(dep.PackageName())
+					if len(provides) == 0 {
+						return nil, fmt.Errorf("No package for %s found on solution.",
+							dep.PackageName())
+					}
+
+					depthin = pkg.NewPackageThin(
+						provides[0].GetPackage().GetName(),
+						provides[0].GetPackage().GetCategory(),
+						provides[0].GetPackage().GetVersion(),
+						[]*pkg.PackageThin{}, []*pkg.PackageThin{},
+					)
+				}
+			}
+
+			pthin.Requires = append(pthin.Requires, depthin)
+		}
+
+	}
+
+	if len(p.CompileSpec.Copy) > 0 && withDeps {
+		for _, c := range p.CompileSpec.Copy {
+			if c.Package == nil {
+				// Just consider a dependency copyfield with package.
+				continue
+			}
+
+			dep := c.Package
+
+			version := dep.GetVersion()
+			if version == "" {
+				version = ">=0"
+			}
+
+			depthin := pkg.NewPackageThin(
+				dep.GetName(), dep.GetCategory(), version,
+				[]*pkg.PackageThin{}, []*pkg.PackageThin{},
+			)
+
+			if solution != nil {
+				if solution.HasKey(dep.PackageName()) {
+					artefacts, _ := solution.GetArtifactsByKey(dep.PackageName())
+					depthin.Version = artefacts[0].GetPackage().GetVersion()
+
+				} else {
+					// Check if the package is provided
+					provides := solution.GetProvides(dep.PackageName())
+					if len(provides) == 0 {
+						return nil, fmt.Errorf("No package for %s found on solution.",
+							dep.PackageName())
+					}
+
+					depthin = pkg.NewPackageThin(
+						provides[0].GetPackage().GetName(),
+						provides[0].GetPackage().GetCategory(),
+						provides[0].GetPackage().GetVersion(),
+						[]*pkg.PackageThin{}, []*pkg.PackageThin{},
+					)
+				}
+			}
+
+			pthin.Requires = append(pthin.Requires, depthin)
+
+		}
+
+	}
+
+	return pthin, nil
+}
+
+func NewPackageArtifact(path string) *PackageArtifact {
+	return &PackageArtifact{Path: path, TreePath: path, Checksums: Checksums{}, CompressionType: tarf_tools.None}
+}
+
+func NewPackageArtifactFromYaml(data []byte) (*PackageArtifact, error) {
+	p := &PackageArtifact{Checksums: Checksums{}}
+	err := yaml.Unmarshal(data, &p)
+	if err != nil {
+		return p, err
+	}
+
+	return p, err
+}
+
+func NewPackageArtifactFromJson(data []byte) (*PackageArtifact, error) {
+	p := &PackageArtifact{Checksums: Checksums{}}
+	err := json.Unmarshal(data, &p)
+	if err != nil {
+		return p, err
+	}
+
+	return p, err
+}
+
+func (a *PackageArtifact) GetPackage() *pkg.DefaultPackage {
+	var ans *pkg.DefaultPackage = nil
+
+	if a.Runtime != nil {
+		ans = a.Runtime.Clone().(*pkg.DefaultPackage)
+	} else if a.CompileSpec != nil && a.CompileSpec.Package != nil {
+		ans = a.CompileSpec.Package.Clone().(*pkg.DefaultPackage)
+
+		// Add copy entry as dependencies
+		if len(a.CompileSpec.Copy) > 0 {
+			for idx := range a.CompileSpec.Copy {
+
+				if a.CompileSpec.Copy[idx].Package != nil {
+					ans.PackageRequires = append(ans.PackageRequires,
+						a.CompileSpec.Copy[idx].Package.Clone().(*pkg.DefaultPackage),
+					)
+				}
+			}
+		}
+	}
+	return ans
+}
+
+func (a *PackageArtifact) GetPackageTreePath(treefs string) string {
+	// NOTE: treefs is the directory of the tree of the local repository.
+	//       Normally /var/cache/anise/<repo>/treefs
+	ans := ""
+	var pkg *pkg.DefaultPackage = nil
+	// TODO: Check if it's correct that sometime a.Runtime is not present.
+	if a.Runtime != nil {
+		pkg = a.Runtime
+	} else if a.CompileSpec != nil && a.CompileSpec.Package != nil {
+		pkg = a.CompileSpec.Package
+	} else {
+		panic(fmt.Sprintf("Unexpected status of the artifact %s", a.Path))
+	}
+	ans = filepath.Join(treefs, pkg.GetCategory(), pkg.GetName(), pkg.GetVersion())
+
+	return ans
+}
+
+func (a *PackageArtifact) ResolveCachePath() {
+	artifactName := path.Base(a.Path)
+	cacheFile := filepath.Join(AniseCfg.GetSystem().GetSystemPkgsCacheDirPath(), artifactName)
+	a.CachePath = cacheFile
+}
+
+func (a *PackageArtifact) Hash() error {
+	return a.Checksums.Generate(a)
+}
+
+func (a *PackageArtifact) Verify() error {
+	sum := Checksums{}
+	if err := sum.Generate(a); err != nil {
+		return err
+	}
+
+	if err := sum.Compare(a.Checksums); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (a *PackageArtifact) GetRepository() string {
+	ans := ""
+
+	if a.Runtime != nil {
+		ans = a.Runtime.Repository
+	}
+
+	if ans == "" && a.CompileSpec != nil && a.CompileSpec.Package != nil {
+		ans = a.CompileSpec.Package.Repository
+	}
+
+	return ans
+}
+
+func (a *PackageArtifact) GetVersion() string {
+	ans := ""
+
+	if a.Runtime != nil {
+		ans = a.Runtime.Version
+	}
+
+	if ans == "" && a.CompileSpec != nil && a.CompileSpec.Package != nil {
+		ans = a.CompileSpec.Package.Version
+	}
+
+	return ans
+}
+
+func (p *PackageArtifact) WriteExtraMetadata(builddir string) error {
+	emfile := filepath.Join(builddir, p.GetPackage().GetFingerPrint()+ExtraMetadataSuffix+".zstd")
+
+	if p.Metadata == nil {
+		return fmt.Errorf("ExtraMetadata not present")
+	}
+
+	data, err := p.Metadata.JSON()
+	if err != nil {
+		return err
+	}
+
+	buffer := bytes.NewBuffer(data)
+
+	dst, err := os.Create(emfile)
+	if err != nil {
+		return err
+	}
+	defer dst.Close()
+
+	enc, err := zstd.NewWriter(dst)
+	if err != nil {
+		return err
+	}
+
+	_, err = io.Copy(enc, buffer)
+	if err != nil {
+		enc.Close()
+		return err
+	}
+	if err := enc.Close(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (a *PackageArtifact) WriteMetadataYaml(dst string) error {
+	// Update runtime package information
+	if a.Runtime == nil && a.CompileSpec != nil && a.CompileSpec.Package != nil {
+		a.Runtime = a.CompileSpec.Package
+	}
+
+	// TODO: probably to reduce using of memory it's better create a writer/reader?
+
+	data, err := yaml.Marshal(a)
+	if err != nil {
+		return errors.Wrap(err, "While marshalling for PackageArtifact YAML")
+	}
+
+	err = ioutil.WriteFile(dst, data, os.ModePerm)
+	if err != nil {
+		return errors.Wrap(err, "While writing PackageArtifact YAML")
+	}
+
+	return nil
+}
+
+func (a *PackageArtifact) WriteMetadataJson(dst string) error {
+	// Update runtime package information
+	if a.Runtime == nil && a.CompileSpec != nil && a.CompileSpec.Package != nil {
+		a.Runtime = a.CompileSpec.Package
+	}
+
+	// TODO: probably to reduce using of memory it's better create a writer/reader?
+
+	data, err := json.Marshal(a)
+	if err != nil {
+		return errors.Wrap(err, "While marshalling for PackageArtifact JSON")
+	}
+
+	err = ioutil.WriteFile(dst, data, os.ModePerm)
+	if err != nil {
+		return errors.Wrap(err, "While writing PackageArtifact JSON")
+	}
+
+	return nil
+}
+
+func (a *PackageArtifact) WriteYaml(dst string) error {
+	// First compute checksum of artifact. When we write the yaml we want to write up-to-date informations.
+	// Temporary until refector
+	cachePath := a.CachePath
+	a.CachePath = a.Path
+	err := a.Hash()
+	if err != nil {
+		return errors.Wrap(err, "Failed generating checksums for artifact")
+	}
+	a.CachePath = cachePath
+
+	// Update runtime package information
+	if a.CompileSpec != nil && a.CompileSpec.Package != nil {
+		a.CompileSpec.Package.Path = a.TreePath
+		runtime, err := a.CompileSpec.Package.GetRuntimePackage()
+		if err != nil {
+			return errors.Wrapf(err, "getting runtime package for '%s'", a.CompileSpec.Package.HumanReadableString())
+		}
+
+		a.Runtime = runtime
+	}
+
+	data, err := yaml.Marshal(a)
+	if err != nil {
+		return errors.Wrap(err, "While marshalling for PackageArtifact YAML")
+	}
+
+	mangle, err := NewPackageArtifactFromYaml(data)
+	if err != nil {
+		return errors.Wrap(err, "Generated invalid artifact")
+	}
+	//p := a.CompileSpec.GetPackage().GetPath()
+
+	mangle.CompileSpec.GetPackage().SetPath("")
+
+	data, err = yaml.Marshal(mangle)
+	if err != nil {
+		return errors.Wrap(err, "While marshalling for PackageArtifact YAML")
+	}
+
+	err = ioutil.WriteFile(dst, data, os.ModePerm)
+	if err != nil {
+		return errors.Wrap(err, "While writing PackageArtifact YAML")
+	}
+	//a.CompileSpec.GetPackage().SetPath(p)
+	return nil
+}
+
+func (a *PackageArtifact) GetFileName() string {
+	return path.Base(a.Path)
+}
+
+// CreateArtifactForFile creates a new artifact from the given file
+func CreateArtifactForFile(s string, opts ...func(*PackageArtifact)) (*PackageArtifact, error) {
+	if _, err := os.Stat(s); os.IsNotExist(err) {
+		return nil, errors.Wrap(err, "artifact path doesn't exist")
+	}
+	fileName := path.Base(s)
+	archive, err := AniseCfg.GetSystem().TempDir("archive")
+	if err != nil {
+		return nil, errors.Wrap(err, "error met while creating tempdir for "+s)
+	}
+	defer os.RemoveAll(archive) // clean up
+	dst := filepath.Join(archive, fileName)
+	if err := fileHelper.CopyFile(s, dst); err != nil {
+		return nil, errors.Wrapf(err, "error while copying %s to %s", s, dst)
+	}
+
+	artifact, err := AniseCfg.GetSystem().TempDir("artifact")
+	if err != nil {
+		return nil, errors.Wrap(err, "error met while creating tempdir for "+s)
+	}
+	a := &PackageArtifact{Path: filepath.Join(artifact, fileName)}
+
+	for _, o := range opts {
+		o(a)
+	}
+
+	return a, a.Compress(archive, 1)
+}
+
+// Compress is responsible to archive and compress to the artifact Path.
+// It accepts a source path, which is the content to be archived/compressed
+// and a concurrency parameter.
+func (a *PackageArtifact) Compress(src string, concurrency int) error {
+	var tarFile string
+
+	cleanup := func() {
+		os.RemoveAll(tarFile) // Remove original
+		Debug("Removed artifact", tarFile)
+	}
+	switch a.CompressionType {
+
+	case tarf_tools.Zstd:
+		err := helpers.Tar(src, a.Path)
+		if err != nil {
+			return err
+		}
+		original, err := os.Open(a.Path)
+		if err != nil {
+			return err
+		}
+		defer original.Close()
+
+		zstdFile := a.getCompressedName()
+		bufferedReader := bufio.NewReader(original)
+
+		// Open a file for writing.
+		dst, err := os.Create(zstdFile)
+		if err != nil {
+			return err
+		}
+
+		enc, err := zstd.NewWriter(dst)
+		if err != nil {
+			return err
+		}
+		_, err = io.Copy(enc, bufferedReader)
+		if err != nil {
+			enc.Close()
+			return err
+		}
+		if err := enc.Close(); err != nil {
+			return err
+		}
+
+		tarFile = a.Path
+		defer cleanup()
+
+		a.Path = zstdFile
+		return nil
+	case tarf_tools.Gzip:
+		err := helpers.Tar(src, a.Path)
+		if err != nil {
+			return err
+		}
+		original, err := os.Open(a.Path)
+		if err != nil {
+			return err
+		}
+		defer original.Close()
+
+		gzipfile := a.getCompressedName()
+		bufferedReader := bufio.NewReader(original)
+
+		// Open a file for writing.
+		dst, err := os.Create(gzipfile)
+		if err != nil {
+			return err
+		}
+		// Create gzip writer.
+		w := gzip.NewWriter(dst)
+		w.SetConcurrency(1<<20, concurrency)
+		defer w.Close()
+		defer dst.Close()
+		_, err = io.Copy(w, bufferedReader)
+		if err != nil {
+			return err
+		}
+		if err := w.Close(); err != nil {
+			return err
+		}
+
+		tarFile = a.Path
+		defer cleanup()
+		//	a.CompressedPath = gzipfile
+		a.Path = gzipfile
+		return nil
+		//a.Path = gzipfile
+
+	// Defaults to tar only (covers when "none" is supplied)
+	default:
+		return helpers.Tar(src, a.getCompressedName())
+	}
+}
+
+func (a *PackageArtifact) getCompressedName() string {
+	switch a.CompressionType {
+	case tarf_tools.Zstd:
+		return a.Path + ".zst"
+
+	case tarf_tools.Gzip:
+		return a.Path + ".gz"
+	}
+	return a.Path
+}
+
+// GetUncompressedName returns the artifact path without the extension suffix
+func (a *PackageArtifact) GetUncompressedName() string {
+	switch a.CompressionType {
+	case tarf_tools.Zstd, tarf_tools.Gzip:
+		return strings.TrimSuffix(a.Path, filepath.Ext(a.Path))
+	}
+	return a.Path
+}
+
+func hashContent(bv []byte) string {
+	hasher := sha1.New()
+	hasher.Write(bv)
+	sha := base64.URLEncoding.EncodeToString(hasher.Sum(nil))
+	return sha
+}
+
+func hashFileContent(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	h := sha1.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+
+	return base64.URLEncoding.EncodeToString(h.Sum(nil)), nil
+}
+
+func tarModifierWrapperFunc(path, dst string, header *tar.Header, content io.Reader,
+	opts *tarf.TarFileOperation, t *tarf.TarFormers) error {
+
+	// If the destination path already exists I rename target file name with postfix.
+	var destPath string
+
+	buffer := bytes.Buffer{}
+	if content != nil {
+		if _, err := buffer.ReadFrom(content); err != nil {
+			return err
+		}
+	}
+	tarHash := hashContent(buffer.Bytes())
+
+	switch header.Typeflag {
+	case tar.TypeReg:
+		destPath = filepath.Join(dst, path)
+	default:
+
+		// Nothing to do. I return original reader
+		return nil
+	}
+
+	// Always skip the write for tarformers because the io.Reader is been
+	// already consumed.
+	opts.Skip = true
+
+	existingHash := ""
+	setfileprops := false
+	f, err := os.Lstat(destPath)
+	if err == nil {
+		Debug("File exists already, computing hash for", destPath)
+		hash, herr := hashFileContent(destPath)
+		if herr == nil {
+			existingHash = hash
+		}
+	} else {
+		setfileprops = true
+	}
+
+	Debug("Existing file hash: ", existingHash, "Tar file hashsum: ", tarHash)
+	// We want to protect file only if the hash of the files are differing OR the file size are
+	differs := (existingHash != "" && existingHash != tarHash) || (err != nil && f != nil && header.Size != f.Size())
+
+	// Check if exists
+	if fileHelper.Exists(destPath) && differs {
+		for i := 1; i < 1000; i++ {
+			name := filepath.Join(filepath.Join(filepath.Dir(path),
+				fmt.Sprintf("._cfg%04d_%s", i, filepath.Base(path))))
+
+			if fileHelper.Exists(name) {
+				continue
+			}
+
+			Info(fmt.Sprintf("Found protected file %s. Creating %s.", destPath,
+				filepath.Join(dst, name)))
+			path = name
+			break
+		}
+	}
+
+	info := header.FileInfo()
+	// Write the file
+	_, err = t.CreateFile(dst, path, info.Mode(), bytes.NewReader(buffer.Bytes()), header)
+	if err != nil {
+		return err
+	}
+	if setfileprops {
+		meta := tarf_specs.NewFileMeta(header)
+		return t.SetFileProps(filepath.Join(dst, path), &meta, false)
+	}
+	return nil
+}
+
+func (a *PackageArtifact) GetProtectFiles() []string {
+	ans := []string{}
+	annotationDir := ""
+
+	if !AniseCfg.ConfigProtectSkip {
+
+		// a.CompileSpec could be nil when artifact.Unpack is used for tree tarball
+		if a.CompileSpec != nil &&
+			a.CompileSpec.GetPackage().HasAnnotation(string(pkg.ConfigProtectAnnnotation)) {
+			dir, ok := a.CompileSpec.GetPackage().GetAnnotations()[string(pkg.ConfigProtectAnnnotation)].(string)
+			if ok {
+				annotationDir = dir
+			}
+		}
+		// TODO: check if skip this if we have a.CompileSpec nil
+
+		cp := NewConfigProtect(annotationDir)
+		cp.Map(a.Files)
+
+		ans = cp.GetProtectFiles(true)
+	}
+
+	return ans
+}
+
+// Unpack Untar and decompress (TODO) to the given path
+func (a *PackageArtifact) Unpack(dst string, enableSubsets bool) error {
+	if !strings.HasPrefix(dst, "/") {
+		return errors.New("destination must be an absolute path")
+	}
+
+	tarformers := tarf.NewTarFormers(tarf.GetOptimusPrime().Config)
+
+	// Create protected file list
+	protectedFiles := a.GetProtectFiles()
+	// Create untar specs
+	spec := a.GetTarFormersSpec(enableSubsets)
+	spec.TriggeredFiles = protectedFiles
+
+	topts := tarf_tools.NewTarReaderCompressionOpts(false)
+	// I use ParseCompressionMode in order to correctly manage
+	// old package with compression string type gzip instead of gz.
+	// This seems a better approach to handle legacy packages and new.
+	topts.Mode = tarf_tools.ParseCompressionMode(string(a.CompressionType))
+	defer topts.Close()
+
+	err := tarf_tools.PrepareTarReader(a.CachePath, topts)
+	if err != nil {
+		return fmt.Errorf("error on prepare tar reader for file %s: %s",
+			a.CachePath, err.Error())
+	}
+
+	if topts.CompressReader != nil {
+		tarformers.SetReader(topts.CompressReader)
+	} else {
+		tarformers.SetReader(topts.FileReader)
+	}
+
+	tarformers.SetFileHandler(tarModifierWrapperFunc)
+
+	err = tarformers.RunTask(spec, dst)
+	if err != nil {
+		return fmt.Errorf(
+			"error on process %s: %s",
+			a.CachePath, err.Error(),
+		)
+	}
+	return nil
+}
+
+// FileList generates the list of file of a package from the local archive
+func (a *PackageArtifact) FileList() ([]string, error) {
+	var tr *tar.Reader
+	archiveDir, err := AniseCfg.GetSystem().TempDir(
+		fmt.Sprintf("%s", filepath.Base(a.Path)))
+	if err != nil {
+		return []string{}, err
+	}
+	cleandir := func() {
+		os.RemoveAll(archiveDir)
+	}
+	defer cleandir()
+
+	switch a.CompressionType {
+	case tarf_tools.Zstd:
+		archive, err := os.Create(filepath.Join(archiveDir,
+			filepath.Base(a.CachePath)+".uncompressed"))
+		if err != nil {
+			return []string{}, err
+		}
+		defer archive.Close()
+
+		original, err := os.Open(a.CachePath)
+		if err != nil {
+			return []string{}, errors.Wrap(err, "Cannot open "+a.CachePath)
+		}
+		defer original.Close()
+
+		bufferedReader := bufio.NewReader(original)
+		r, err := zstd.NewReader(bufferedReader)
+		if err != nil {
+			return []string{}, err
+		}
+		defer r.Close()
+		tr = tar.NewReader(r)
+	case tarf_tools.Gzip:
+		// Create the uncompressed archive
+		archive, err := os.Create(filepath.Join(archiveDir,
+			filepath.Base(a.CachePath)+".uncompressed"))
+		if err != nil {
+			return []string{}, err
+		}
+		defer archive.Close()
+
+		original, err := os.Open(a.CachePath)
+		if err != nil {
+			return []string{}, errors.Wrap(err, "Cannot open "+a.CachePath)
+		}
+		defer original.Close()
+
+		bufferedReader := bufio.NewReader(original)
+		r, err := gzip.NewReader(bufferedReader)
+		if err != nil {
+			return []string{}, err
+		}
+		defer r.Close()
+		tr = tar.NewReader(r)
+
+	// Defaults to tar only (covers when "none" is supplied)
+	default:
+		tarFile, err := os.Open(a.CachePath)
+		if err != nil {
+			return []string{}, errors.Wrap(err, "Could not open package archive")
+		}
+		defer tarFile.Close()
+		tr = tar.NewReader(tarFile)
+
+	}
+
+	var files []string
+	// untar each segment
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return []string{}, err
+		}
+		// determine proper file path info
+		finfo := hdr.FileInfo()
+		fileName := hdr.Name
+		if finfo.Mode().IsDir() {
+			continue
+		}
+		files = append(files, fileName)
+
+		// if a dir, create it, then go to next segment
+	}
+	return files, nil
+}

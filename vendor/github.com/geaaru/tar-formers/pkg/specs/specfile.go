@@ -1,5 +1,5 @@
 /*
-Copyright (C) 2021-2022  Daniele Rondina <geaaru@funtoo.org>
+Copyright © 2021-2026 Daniele Rondina <geaaru@macaronios.org>
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -164,6 +164,14 @@ func (s *SpecFile) GetRename(file string) string {
 		for _, r := range s.Rename {
 			if r.Source == file {
 				return r.Dest
+			}
+		}
+	}
+
+	if len(s.RenamePath) > 0 {
+		for _, r := range s.RenamePath {
+			if strings.HasPrefix(file, r.Source) {
+				return strings.Replace(file, r.Source, r.Dest, 1)
 			}
 		}
 	}

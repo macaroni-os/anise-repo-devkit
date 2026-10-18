@@ -131,7 +131,7 @@ func (f files) AsConfig() string {
 //
 //	data:
 //
-// {{ .Files.Glob("secrets/*").AsSecrets() }}
+// {{ .Files.Glob("secrets/*").AsSecrets() | indent 4 }}
 func (f files) AsSecrets() string {
 	if f == nil {
 		return ""
@@ -154,9 +154,12 @@ func (f files) AsSecrets() string {
 // {{ range .Files.Lines "foo/bar.html" }}
 // {{ . }}{{ end }}
 func (f files) Lines(path string) []string {
-	if f == nil || f[path] == nil {
+	if f == nil || len(f[path]) == 0 {
 		return []string{}
 	}
-
-	return strings.Split(string(f[path]), "\n")
+	s := string(f[path])
+	if s[len(s)-1] == '\n' {
+		s = s[:len(s)-1]
+	}
+	return strings.Split(s, "\n")
 }
