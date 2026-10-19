@@ -211,16 +211,39 @@ func (c *RepoKnife) Analyze() error {
 		}
 	}
 
-	//
 	err = c.CheckFilesWithTrees()
 	if err != nil {
 		return err
+	}
+
+	// Check if there are extra metadata to remove without packages
+	for f, _ := range c.ExtraMetaMap {
+
+		replaceRegex := regexp.MustCompile(
+			`.extra-metadata.json.zstd$`,
+		)
+
+		metaFile := replaceRegex.ReplaceAllString(f, ".metadata.yaml")
+		if _, present := c.MetaMap[metaFile]; !present {
+			if c.Verbose {
+				InfoC(fmt.Sprintf(
+					"No metafile available for extra-metadata file %s. I delete the file.",
+					f))
+			} else {
+				DebugC(fmt.Sprintf(
+					"No metafile available for extra-metadata file %s. I delete the file.",
+					f))
+			}
+			c.Files2Remove = append(c.Files2Remove, f)
+		}
+
 	}
 
 	return nil
 }
 
 func (c *RepoKnife) CheckFilesWithTrees() error {
+	meta2Remove := []string{}
 
 	for m, art := range c.MetaMap {
 
@@ -250,9 +273,16 @@ func (c *RepoKnife) CheckFilesWithTrees() error {
 			}
 
 			c.Files2Remove = append(c.Files2Remove, m)
+			meta2Remove = append(meta2Remove, m)
 			c.Files2Remove = append(c.Files2Remove, pkgFile)
 		}
 
+	}
+
+	// Clean meta file candidates for remove from map
+	// to ensure correctly cleanup of extra metadata files.
+	for idx := range meta2Remove {
+		delete(c.MetaMap, meta2Remove[idx])
 	}
 
 	return nil
