@@ -259,7 +259,7 @@ func NewPkgsCommand() *cobra.Command {
 	flags.Bool("build-ordered", false,
 		"Show list of missing packages with a build order. To use with --missings.")
 	flags.Bool("build-ordered-with-resolve", false,
-		"Use stage4 tree resolving. Slow. To use with --build-ordered.")
+		"Sort packages for dependencies selected for elaboration. To use with --build-ordered.")
 	flags.Bool("json", false, "Show packages in JSON format.")
 	flags.Int32P("limit", "l", 0, "Limit number of packages returned. 0 means no limit.")
 	flags.StringArrayP("filter", "f", []string{},
